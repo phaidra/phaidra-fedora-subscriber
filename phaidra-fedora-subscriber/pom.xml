@@ -37,10 +37,5 @@
   		<artifactId>fcrepo-client-admin</artifactId>
   		<version>3.6.1</version>
   	</dependency>
-  	<dependency>
-        <groupId>org.apache.axis</groupId>
-        <artifactId>axis</artifactId>
-        <version>1.4</version>
-     </dependency>
   </dependencies>
 </project>
