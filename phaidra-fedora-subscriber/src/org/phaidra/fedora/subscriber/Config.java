@@ -1,43 +1,26 @@
 package org.phaidra.fedora.subscriber;
 
-import java.io.BufferedWriter;
-import java.io.ByteArrayInputStream;
+
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.FileWriter;
-import java.io.IOException;
+
 import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.StringReader;
-import java.io.StringWriter;
+
 import java.net.URL;
 import java.util.Enumeration;
 import java.util.Hashtable;
-import java.util.List;
+
 import java.util.Properties;
 import java.util.StringTokenizer;
 
-import javax.activation.MimetypesFileTypeMap;
-import javax.xml.transform.Transformer;
-import javax.xml.transform.TransformerConfigurationException;
-import javax.xml.transform.TransformerException;
-import javax.xml.transform.TransformerFactory;
-import javax.xml.transform.TransformerFactoryConfigurationError;
-import javax.xml.transform.stream.StreamResult;
-import javax.xml.transform.stream.StreamSource;
 
-import org.apache.axis.client.AdminClient;
 import org.apache.log4j.Logger;
 
 import org.phaidra.fedora.subscriber.errors.ConfigException;
 
 import org.fcrepo.client.FedoraClient;
-import org.fcrepo.client.Uploader;
+
 import org.fcrepo.server.access.FedoraAPIA;
 import org.fcrepo.server.management.FedoraAPIM;
-import org.fcrepo.server.types.gen.DatastreamDef;
-import org.fcrepo.server.types.gen.MIMETypedStream;
 
 /**
  * Reads and checks the configuration files,
@@ -46,65 +29,36 @@ import org.fcrepo.server.types.gen.MIMETypedStream;
  * 
  * A Config object may exist for each given configuration.
  * The normal situation is that the default currentConfig is named
- * by finalConfigName = "fgsconfigFinal" ( pre 2.3 = 'config').
+ * by finalConfigName = "pfsconfigFinal" ( pre 2.3 = 'config').
  * 
  * For test purposes, the configure operation may be called with the configName
  * matching other given configurations, and then the configure operation
  * with a property may be used to change property values for test purposes.
  * 
- * From 2.4 the configuration may be managed in Fedora objects, see the configureObjects method.
- * In 2.4 it is decided to keep all configuration files in one Fedora object,
- * this may change later, if there are good reasons. Therefore, the names 'configObjects'
- * and 'configureObjects' refer now to just one object.
- * 
- * @author  gsp@dtv.dk
+ * @author 
  * @version
  */
 public class Config {
 
-    FedoraClient fgsconfigObjectsClient = null;
+    FedoraClient fedoraClient = null;
     
     private static Config currentConfig = null;
     
     private static Hashtable<String, Config> configs = new Hashtable<String, Config>();
     
-    private static boolean wsddDeployed = false;
-    
-    private static String configRootObjectPid = "FgsConfig:fgsconfigFinal";
-    
-    private static String finalConfigName = "fgsconfigFinal";
+    private static String finalConfigName = "pfsconfigFinal";
     
     private String configName = null;
     
     private Properties fcoProps = null;
     
-    private Properties fgsProps = null;
+    private Properties pfsProps = null;
     
     private Hashtable<String, Properties> repositoryNameToProps = null;
     
     private String defaultRepositoryName = null;
     
-    private Hashtable<String, Properties> indexNameToProps = null;
-    
-    private String defaultIndexName = null;
-    
     private Hashtable<String, Properties> updaterNameToProps = null;
-    
-    private int maxPageSize = 50;
-    
-    private int defaultGfindObjectsHitPageStart = 1;
-    
-    private int defaultGfindObjectsHitPageSize = 10;
-    
-    private int defaultGfindObjectsSnippetsMax = 3;
-    
-    private int defaultGfindObjectsFieldMaxLength = 100;
-    
-    private int defaultBrowseIndexTermPageSize = 20;
-    
-    private String defaultSnippetBegin = "<span class=\"highlight\">";
-    
-    private String defaultSnippetEnd = "</span>";
 
     private StringBuffer errors = null;
     
@@ -121,29 +75,7 @@ public class Config {
         configs.put(configName, currentConfig);
     }
 
-    /**
-     * The configure operation with configureAction allows management of GSearch configuration in Fedora objects.
-     * The operation either sets or gets the GSearch configuration objects in a Fedora repository.
-     * configureAction must be either 'setFgsConfigObjects' or 'getFgsConfigObjects':
-     *   setFgsConfigObjects will copy from fgsfinalConfig into the configure objects (creating if non-existing).
-     *   getFgsConfigObjects will copy from the configure objects into fgsfinalConfig.
-     * The resulting fgsfinalConfig will become currentConfig.
-     * The Fedora repository used is configured in the fgsconfigObjects.properties file.
-     * Initially, the fgsAdmin creates the set of configuration files with root named 'fgsfinalConfig'.
-     * The first call of the 'setFgsConfigObjects' action will create the configure objects in the configured Fedora repository.
-     * Subsequent editing of the configure objects will be made currentConfig by calls of 'getFgsConfigObjects'.
-     */
-    public static void configureObjects(String configureAction) throws ConfigException {
-    	if (configureAction.equals("setFgsConfigObjects")) {
-    		(new Config()).setFgsConfigObjects();
-    	} else if (configureAction.equals("getFgsConfigObjects")) {
-    		(new Config()).getFgsConfigObjects();
-    	} else {
-    		throw new ConfigException("*** configureAction='"+configureAction+"' is invalid.");
-    	}
-        currentConfig = new Config(finalConfigName);
-        configs.put(finalConfigName, currentConfig);
-    }
+   
 
     /**
      * The configure operation with a property 
@@ -191,11 +123,11 @@ public class Config {
     		configName = finalConfigName;
         errors = new StringBuffer();
         
-//      Get fedoragsearch properties
-    	fgsProps = getFgsConfigProps("/"+configName+"/fedoragsearch.properties");
+//      Get pfs properties
+    	pfsProps = getPfsConfigProps("/"+configName+"/pfs.properties");
 
 //      Get updater properties
-    	String updaterProperty = getProperty(fgsProps, "fedoragsearch.updaterNames");
+    	String updaterProperty = getProperty(pfsProps, "pfs.updaterNames");
     	if(updaterProperty == null) {
     		updaterNameToProps = null; // No updaters will be created
     	} else {           
@@ -204,7 +136,7 @@ public class Config {
     		while (updaterNames.hasMoreTokens()) {
     			String updaterName = updaterNames.nextToken();
 				try {
-					updaterNameToProps.put(updaterName, getFgsConfigProps("/"+configName+"/updater/"+updaterName+"/updater.properties"));
+					updaterNameToProps.put(updaterName, getPfsConfigProps("/"+configName+"/updater/"+updaterName+"/updater.properties"));
 				} catch (Exception e) {
 	            	errors.append("\n*** " + e.toString());
 				}
@@ -214,13 +146,13 @@ public class Config {
 //      Get repository properties
         repositoryNameToProps = new Hashtable<String, Properties>();
         defaultRepositoryName = null;
-        StringTokenizer repositoryNames = new StringTokenizer(getProperty(fgsProps, "fedoragsearch.repositoryNames"));
+        StringTokenizer repositoryNames = new StringTokenizer(getProperty(pfsProps, "pfs.repositoryNames"));
         while (repositoryNames.hasMoreTokens()) {
             String repositoryName = repositoryNames.nextToken();
             if (defaultRepositoryName == null)
                 defaultRepositoryName = repositoryName;
             try {
-				repositoryNameToProps.put(repositoryName, getFgsConfigProps("/"+configName+"/repository/"+repositoryName+"/repository.properties"));
+				repositoryNameToProps.put(repositoryName, getPfsConfigProps("/"+configName+"/repository/"+repositoryName+"/repository.properties"));
 			} catch (Exception e) {
             	errors.append("\n*** " + e.toString());
 			}
@@ -231,65 +163,12 @@ public class Config {
     private void checkConfig() throws ConfigException {
         
 //  	Check for unknown properties, indicating typos or wrong property names
-    	String[] propNames = {
-    			"fedoragsearch.deployFile",
-    			"fedoragsearch.soapBase",
-    			"fedoragsearch.soapUser",
-    			"fedoragsearch.soapPass",
-    			"fedoragsearch.defaultNoXslt",
-    			"fedoragsearch.defaultGfindObjectsRestXslt",
-    			"fedoragsearch.defaultUpdateIndexRestXslt",
-    			"fedoragsearch.defaultBrowseIndexRestXslt",
-    			"fedoragsearch.defaultGetRepositoryInfoRestXslt",
-    			"fedoragsearch.defaultGetIndexInfoRestXslt",
-    			"fedoragsearch.mimeTypes",
-    			"fedoragsearch.maxPageSize",
-    			"fedoragsearch.defaultBrowseIndexTermPageSize",
-    			"fedoragsearch.defaultGfindObjectsHitPageSize",
-    			"fedoragsearch.defaultGfindObjectsSnippetsMax",
-    			"fedoragsearch.defaultGfindObjectsFieldMaxLength",
-    			"fedoragsearch.repositoryNames",
-    			"fedoragsearch.indexNames",
-    			"fedoragsearch.updaterNames",
-    			"fedoragsearch.searchResultFilteringModule",
-    			"fedoragsearch.searchResultFilteringType",
-    			"fedoragsearch.xsltProcessor",
-				"fedoragsearch.writeLimit"
+    	String[] propNames = { 			
+    			"pfs.repositoryNames",
+    			"pfs.updaterNames"
     	};
-    	checkPropNames("fedoragsearch.properties", fgsProps, propNames);
+    	checkPropNames("pfs.properties", pfsProps, propNames);
 
-//  	Check fedoragsearch.xsltProcessor
-    	String xsltProcessor = getXsltProcessor();
-        if (!(xsltProcessor==null || xsltProcessor.equals("") || xsltProcessor.equals("xalan") || xsltProcessor.equals("saxon"))) {
-            errors.append("\n*** fedoragsearch.xsltProcessor value="+xsltProcessor+", must be xalan or saxon");
-          }
-
-//  	Check resultPage properties
-    	try {
-    		maxPageSize = Integer.parseInt(getProperty(fgsProps, "fedoragsearch.maxPageSize"));
-    	} catch (NumberFormatException e) {
-    		errors.append("\n*** maxPageSize is not valid:\n" + e.toString());
-    	}
-    	try {
-    		defaultBrowseIndexTermPageSize = Integer.parseInt(getProperty(fgsProps, "fedoragsearch.defaultBrowseIndexTermPageSize"));
-    	} catch (NumberFormatException e) {
-    		errors.append("\n*** defaultBrowseIndexTermPageSize is not valid:\n" + e.toString());
-    	}
-    	try {
-    		defaultGfindObjectsHitPageSize = Integer.parseInt(getProperty(fgsProps, "fedoragsearch.defaultGfindObjectsHitPageSize"));
-    	} catch (NumberFormatException e) {
-    		errors.append("\n*** defaultGfindObjectsHitPageSize is not valid:\n" + e.toString());
-    	}
-    	try {
-    		defaultGfindObjectsSnippetsMax = Integer.parseInt(getProperty(fgsProps, "fedoragsearch.defaultGfindObjectsSnippetsMax"));
-    	} catch (NumberFormatException e) {
-    		errors.append("\n*** defaultGfindObjectsSnippetsMax is not valid:\n" + e.toString());
-    	}
-    	try {
-    		defaultGfindObjectsFieldMaxLength = Integer.parseInt(getProperty(fgsProps, "fedoragsearch.defaultGfindObjectsFieldMaxLength"));
-    	} catch (NumberFormatException e) {
-    		errors.append("\n*** defaultGfindObjectsFieldMaxLength is not valid:\n" + e.toString());
-    	}
 
 //		Check updater properties
     	Enumeration<String> updaterNames = updaterNameToProps.keys();
@@ -320,110 +199,22 @@ public class Config {
     		Properties props = repositoryNameToProps.get(repositoryName);    		
 //  		Check for unknown properties, indicating typos or wrong property names
     		String[] reposPropNames = {
-    				"fgsrepository.repositoryName",
-    				"fgsrepository.fedoraSoap",
-    				"fgsrepository.fedoraUser",
-    				"fgsrepository.fedoraPass",
-    				"fgsrepository.fedoraObjectDir",
-    				"fgsrepository.fedoraVersion",
-    				"fgsrepository.defaultGetRepositoryInfoResultXslt",
-    				"fgsrepository.trustStorePath",
-    				"fgsrepository.trustStorePass"
+    				"pfsrepository.repositoryName",
+    				"pfsrepository.fedoraSoap",
+    				"pfsrepository.fedoraUser",
+    				"pfsrepository.fedoraPass",
+    				"pfsrepository.fedoraObjectDir",
+    				"pfsrepository.fedoraVersion",
+    				"pfsrepository.trustStorePath",
+    				"pfsrepository.trustStorePass"
     		};
     		checkPropNames(configName+"/repository/"+repositoryName+"/repository.properties", props, reposPropNames);
 
 //  		Check repositoryName
-    		String propsRepositoryName = getProperty(props, "fgsrepository.repositoryName");
+    		String propsRepositoryName = getProperty(props, "pfsrepository.repositoryName");
     		if (!repositoryName.equals(propsRepositoryName)) {
     			errors.append("\n*** "+configName+"/repository/" + repositoryName +
-    					": fgsrepository.repositoryName must be=" + repositoryName);
-    		}
-
-
-//  		Check result stylesheets
-    		checkResultStylesheet("repository/"+repositoryName, props, "fgsrepository.defaultGetRepositoryInfoResultXslt");
-    	}
-
-//  	Check index properties
-    	Enumeration<String> indexNames = indexNameToProps.keys();
-    	while (indexNames.hasMoreElements()) {
-    		String indexName = indexNames.nextElement();
-    		Properties props = indexNameToProps.get(indexName);
-//  		Check for unknown properties, indicating typos or wrong property names
-    		String[] indexPropNames = {
-    				"fgsindex.indexName",
-    				"fgsindex.indexBase",
-    				"fgsindex.indexUser",
-    				"fgsindex.indexPass",
-    				"fgsindex.operationsImpl",
-    				"fgsindex.defaultUpdateIndexDocXslt",
-    				"fgsindex.defaultUpdateIndexResultXslt",
-    				"fgsindex.defaultGfindObjectsResultXslt",
-    				"fgsindex.defaultBrowseIndexResultXslt",
-    				"fgsindex.defaultGetIndexInfoResultXslt",
-    				"fgsindex.indexDir",
-    				"fgsindex.analyzer",
-    				"fgsindex.fieldAnalyzers",
-    				"fgsindex.stopwordsLocation",
-    				"fgsindex.untokenizedFields",
-    				"fgsindex.defaultQueryFields",
-    				"fgsindex.allowLeadingWildcard",
-    				"fgsindex.lowercaseExpandedTerms",
-    				"fgsindex.snippetBegin",
-    				"fgsindex.snippetEnd",
-    				"fgsindex.maxBufferedDocs",
-    				"fgsindex.mergeFactor",
-    				"fgsindex.defaultWriteLockTimeout",
-    				"fgsindex.defaultSortFields",
-    				"fgsindex.uriResolver"
-    		};
-    		checkPropNames(configName+"/index/"+indexName+"/index.properties", props, indexPropNames);
-    		
-//  		Check indexName
-    		String propsIndexName = getProperty(props, "fgsindex.indexName");
-    		if (!indexName.equals(propsIndexName)) {
-    			errors.append("\n*** "+configName+"/index/" + indexName
-    					+ ": fgsindex.indexName must be=" + indexName);
-    		}
-
-//  		Check operationsImpl class
-    		String operationsImpl = getProperty(props, "fgsindex.operationsImpl");
-    		if (operationsImpl == null || operationsImpl.equals("")) {
-    			errors.append("\n*** "+configName+"/index/" + indexName
-    					+ ": fgsindex.operationsImpl must be set in "+configName+"/index/ "
-    					+ indexName + ".properties");
-    		}
-    
-
-//  		Check result stylesheets
-    		checkResultStylesheet("index/"+indexName, props, 
-    		"fgsindex.defaultUpdateIndexDocXslt");
-    		checkResultStylesheet("index/"+indexName, props, 
-    		"fgsindex.defaultUpdateIndexResultXslt");
-    		checkResultStylesheet("index/"+indexName, props, 
-    		"fgsindex.defaultGfindObjectsResultXslt");
-    		checkResultStylesheet("index/"+indexName, props, 
-    		"fgsindex.defaultBrowseIndexResultXslt");
-    		checkResultStylesheet("index/"+indexName, props, 
-    		"fgsindex.defaultGetIndexInfoResultXslt");
-
-//  		Check defaultQueryFields - how can we check this?
-    		//String defaultQueryFields = getProperty(props, "fgsindex.defaultQueryFields");
-
-//      	Check allowLeadingWildcard
-    		if (operationsImpl.indexOf("fgslucene")>-1) {
-            	String allowLeadingWildcard = getIndexProps(indexName).getProperty("fgsindex.allowLeadingWildcard");
-                if (!(allowLeadingWildcard==null || allowLeadingWildcard.equals("") || allowLeadingWildcard.equals("false") || allowLeadingWildcard.equals("true"))) {
-                    errors.append("\n*** fedoragsearch.allowLeadingWildcard value="+allowLeadingWildcard+", must be false or true");
-                  }
-    		}
-
-//      	Check lowercaseExpandedTerms
-    		if (operationsImpl.indexOf("fgslucene")>-1) {
-            	String lowercaseExpandedTerms = getIndexProps(indexName).getProperty("fgsindex.lowercaseExpandedTerms");
-                if (!(lowercaseExpandedTerms==null || lowercaseExpandedTerms.equals("") || lowercaseExpandedTerms.equals("false") || lowercaseExpandedTerms.equals("true"))) {
-                    errors.append("\n*** fgsindex.lowercaseExpandedTerms value="+lowercaseExpandedTerms+", must be false or true");
-                  }
+    					": pfsrepository.repositoryName must be=" + repositoryName);
     		}
     	
     	}
@@ -432,73 +223,7 @@ public class Config {
     	if (errors.length()>0)
     		throw new ConfigException(errors.toString());
     }
-    
-    //  Read soap deployment parameters and try to deploy the wsdd file    
-    public void deployWSDD() {
-      String [] params = new String[4];
-      params[0] = "-l"+getSoapBase();
-      params[1] =      insertSystemProperties(getDeployFile());
-      params[2] = "-u"+getSoapUser();
-      params[3] = "-w"+getSoapPass();
-      if (logger.isDebugEnabled())
-          logger.debug("AdminClient()).process(soapBase="+params[0]+" soapUser="+params[2]+" soapPass="+params[3]+" deployFile="+params[1]+")");
-      try {
-          (new AdminClient()).process(params);
-      } catch (Exception e) {
-          errors.append("\n*** Unable to deploy\n"+e.toString());
-          logger.warn("Unable to deploy: " + e.getMessage());
-      }
-      wsddDeployed = true;
-    }
-    
-    public boolean wsddDeployed() {
-        return wsddDeployed;
-    }
 
-    private void checkResultStylesheet(String xsltPath, Properties props, String propName) {
-        String propValue = getProperty(props, propName);
-        String configPath = "/"+configName+"/"+xsltPath+"/"+propValue+".xslt";
-        checkStylesheet(configPath);
-    }
-    
-    private void checkStylesheet(String configPath) {
-        if (logger.isDebugEnabled())
-            logger.debug("checkStylesheet for " + configPath);
-        URL stylesheet = Config.class.getResource(configPath);
-        if (stylesheet==null) {
-          errors.append("\n*** Stylesheet "+configPath+" not found");
-          return;
-        }
-        TransformerFactory tfactory = null;
-		try {
-			tfactory = TransformerFactory.newInstance();
-		} catch (TransformerFactoryConfigurationError e) {
-            errors.append("\n*** Stylesheet "+configPath+" error:\n"+e.toString());
-		}
-        StreamSource xslt = null;
-		try {
-			xslt = new StreamSource(stylesheet.openStream(), stylesheet.toString());
-		} catch (IOException e) {
-            errors.append("\n*** Stylesheet "+configPath+" error:\n"+e.toString());
-		}
-        Transformer transformer = null;
-        try {
-			transformer = tfactory.newTransformer(xslt);
-		} catch (TransformerConfigurationException e) {
-            errors.append("\n*** Stylesheet "+configPath+" error:\n"+e.toString());
-		}
-        String testSource = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"+
-        "<emptyTestDocumentRoot/>";
-        StringReader sr = new StringReader(testSource);
-        StreamResult destStream = new StreamResult(new StringWriter());
-        try {
-            transformer.transform(new StreamSource(sr), destStream);
-        } catch (TransformerException e) {
-            errors.append("\n*** Stylesheet "+configPath+" error:\n"+e.toString());
-        } catch (TransformerFactoryConfigurationError e) {
-            errors.append("\n*** Stylesheet "+configPath+" error:\n"+e.toString());
-        }
-    }
     
     private void checkPropNames(String propsFileName, Properties props, String[] propNames) {
 //		Check for unknown properties, indicating typos or wrong property names
@@ -521,105 +246,31 @@ public class Config {
     }
     
     public String getSoapBase() {
-        return getProperty(fgsProps, "fedoragsearch.soapBase");
+        return getProperty(pfsProps, "pfs.soapBase");
     }
     
     public String getSoapUser() {
-        return getProperty(fgsProps, "fedoragsearch.soapUser");
+        return getProperty(pfsProps, "pfs.soapUser");
     }
     
     public String getSoapPass() {
-        return getProperty(fgsProps, "fedoragsearch.soapPass");
+        return getProperty(pfsProps, "pfs.soapPass");
     }
-    
-    public String getDeployFile() {
-        return insertSystemProperties(getProperty(fgsProps, "fedoragsearch.deployFile"));
-    }
-    
-    public String getDefaultNoXslt() {
-        return getProperty(fgsProps, "fedoragsearch.defaultNoXslt");
-    }
-    
-    public String getDefaultGfindObjectsRestXslt() {
-        return getProperty(fgsProps, "fedoragsearch.defaultGfindObjectsRestXslt");
-    }
-    
-    public int getMaxPageSize() {
-        try {
-        	maxPageSize = Integer.parseInt(getProperty(fgsProps, "fedoragsearch.maxPageSize"));
-        } catch (NumberFormatException e) {
-        }
-        return maxPageSize;
-    }
-    
-    public int getDefaultGfindObjectsHitPageStart() {
-        return defaultGfindObjectsHitPageStart;
-    }
-    
-    public int getDefaultGfindObjectsHitPageSize() {
-        try {
-            defaultGfindObjectsHitPageSize = Integer.parseInt(getProperty(fgsProps, "fedoragsearch.defaultGfindObjectsHitPageSize"));
-        } catch (NumberFormatException e) {
-        }
-        return defaultGfindObjectsHitPageSize;
-    }
-    
-    public int getDefaultGfindObjectsSnippetsMax() {
-        try {
-        	defaultGfindObjectsSnippetsMax = Integer.parseInt(getProperty(fgsProps, "fedoragsearch.defaultGfindObjectsSnippetsMax"));
-        } catch (NumberFormatException e) {
-        }
-        return defaultGfindObjectsSnippetsMax;
-    }
-    
-    public int getDefaultGfindObjectsFieldMaxLength() {
-        try {
-        	defaultGfindObjectsFieldMaxLength = Integer.parseInt(getProperty(fgsProps, "fedoragsearch.defaultGfindObjectsFieldMaxLength"));
-        } catch (NumberFormatException e) {
-        }
-        return defaultGfindObjectsFieldMaxLength;
-    }
-    
-    public String getDefaultBrowseIndexRestXslt() {
-        return getProperty(fgsProps, "fedoragsearch.defaultBrowseIndexRestXslt");
-    }
-    
-    public int getDefaultBrowseIndexTermPageSize() {
-        try {
-        	defaultBrowseIndexTermPageSize = Integer.parseInt(getProperty(fgsProps, "fedoragsearch.defaultBrowseIndexTermPageSize"));
-        } catch (NumberFormatException e) {
-        }
-        return defaultBrowseIndexTermPageSize;
-    }
+
     
     public int getWriteLimit() {
     	int writeLimit = 100000; // the Tika default value
 		try {
-			writeLimit = Integer.parseInt(getProperty(fgsProps, "fedoragsearch.writeLimit"));
+			writeLimit = Integer.parseInt(getProperty(pfsProps, "pfs.writeLimit"));
 		} catch (NumberFormatException e) {
 		}
     	return writeLimit;
     }
-    
-    public String getDefaultGetRepositoryInfoRestXslt() {
-        return getProperty(fgsProps, "fedoragsearch.defaultGetRepositoryInfoRestXslt");
-    }
-    
-    public String getDefaultGetIndexInfoRestXslt() {
-        return getProperty(fgsProps, "fedoragsearch.defaultGetIndexInfoRestXslt");
-    }
-    
-    public String getDefaultUpdateIndexRestXslt() {
-        return getProperty(fgsProps, "fedoragsearch.defaultUpdateIndexRestXslt");
-    }
-    
-    public String getMimeTypes() {
-        return getProperty(fgsProps, "fedoragsearch.mimeTypes");
-    }
+
     
     public String getIndexNames(String indexNames) {
         if (indexNames==null || indexNames.equals("")) 
-            return getProperty(fgsProps, "fedoragsearch.indexNames");
+            return getProperty(pfsProps, "pfs.indexNames");
         else 
             return indexNames;
     }
@@ -640,9 +291,9 @@ public class Config {
         	Enumeration<Properties> propss = repositoryNameToProps.elements();
         	while (propss.hasMoreElements()) {
         		Properties props = propss.nextElement();
-        		String fedoraSoap = getProperty(props, "fgsrepository.fedoraSoap");
+        		String fedoraSoap = getProperty(props, "pfsrepository.fedoraSoap");
         		if (fedoraSoap != null && fedoraSoap.indexOf(hostPort) > -1) {
-        			return getProperty(props, "fgsrepository.repositoryName", defaultRepositoryName);
+        			return getProperty(props, "pfsrepository.repositoryName", defaultRepositoryName);
         		}
         	}
         }
@@ -654,214 +305,42 @@ public class Config {
     }
     
     public String getFedoraSoap(String repositoryName) {
-        return (getRepositoryProps(repositoryName)).getProperty("fgsrepository.fedoraSoap");
+        return (getRepositoryProps(repositoryName)).getProperty("pfsrepository.fedoraSoap");
     }
     
     public String getFedoraUser(String repositoryName) {
-        return (getRepositoryProps(repositoryName)).getProperty("fgsrepository.fedoraUser");
+        return (getRepositoryProps(repositoryName)).getProperty("pfsrepository.fedoraUser");
     }
     
     public String getFedoraPass(String repositoryName) {
-        return (getRepositoryProps(repositoryName)).getProperty("fgsrepository.fedoraPass");
+        return (getRepositoryProps(repositoryName)).getProperty("pfsrepository.fedoraPass");
     }
     
     public File getFedoraObjectDir(String repositoryName) throws ConfigException {
-        String fedoraObjectDirName = insertSystemProperties(getRepositoryProps(repositoryName).getProperty("fgsrepository.fedoraObjectDir"));
+        String fedoraObjectDirName = insertSystemProperties(getRepositoryProps(repositoryName).getProperty("pfsrepository.fedoraObjectDir"));
         File fedoraObjectDir = new File(fedoraObjectDirName);
        // if (fedoraObjectDir == null) {
-        //    throw new ConfigException(repositoryName+": fgsrepository.fedoraObjectDir=" + fedoraObjectDirName + " not found");
+        //    throw new ConfigException(repositoryName+": pfsrepository.fedoraObjectDir=" + fedoraObjectDirName + " not found");
         //}
         return fedoraObjectDir;
     }
     
     public String getFedoraVersion(String repositoryName) {
-        return (getRepositoryProps(repositoryName)).getProperty("fgsrepository.fedoraVersion");
-    }
-    
-    public String getRepositoryInfoResultXslt(String repositoryName, String resultPageXslt) {
-        if (resultPageXslt==null || resultPageXslt.equals("")) 
-            return (getRepositoryProps(getRepositoryName(repositoryName))).getProperty("fgsrepository.defaultGetRepositoryInfoResultXslt");
-        else 
-            return resultPageXslt;
+        return (getRepositoryProps(repositoryName)).getProperty("pfsrepository.fedoraVersion");
     }
     
     public String getTrustStorePath(String repositoryName) {
-        return (getRepositoryProps(repositoryName)).getProperty("fgsrepository.trustStorePath");
+        return (getRepositoryProps(repositoryName)).getProperty("pfsrepository.trustStorePath");
     }
     
     public String getTrustStorePass(String repositoryName) {
-        return (getRepositoryProps(repositoryName)).getProperty("fgsrepository.trustStorePass");
+        return (getRepositoryProps(repositoryName)).getProperty("pfsrepository.trustStorePass");
     }
 
     public Hashtable<String, Properties> getUpdaterProps() {
         return updaterNameToProps;
     }    
-    
-    public String getIndexName(String indexName) {
-        if (indexName==null || indexName.equals("")) 
-            return defaultIndexName;
-        else {
-        	int i = indexName.indexOf("/");
-        	if (i<0)
-                return indexName;
-        	else
-        		return indexName.substring(0, i);
-        }
-    }
-    
-    public Properties getIndexProps(String indexName) {
-        return (indexNameToProps.get(getIndexName(indexName)));
-    }
-    
-    public String getUpdateIndexDocXslt(String indexName, String indexDocXslt) {
-        if (indexDocXslt==null || indexDocXslt.equals("")) 
-            return (getIndexProps(indexName)).getProperty("fgsindex.defaultUpdateIndexDocXslt");
-        else 
-            return indexDocXslt;
-    }
-    
-    public String getUpdateIndexResultXslt(String indexName, String resultPageXslt) {
-        if (resultPageXslt==null || resultPageXslt.equals("")) 
-            return (getIndexProps(indexName)).getProperty("fgsindex.defaultUpdateIndexResultXslt");
-        else 
-            return resultPageXslt;
-    }
-    
-    public String getGfindObjectsResultXslt(String indexName, String resultPageXslt) {
-        if (resultPageXslt==null || resultPageXslt.equals("")) 
-            return (getIndexProps(indexName)).getProperty("fgsindex.defaultGfindObjectsResultXslt");
-        else 
-            return resultPageXslt;
-    }
 
-	public String getSortFields(String indexName, String sortFields) {
-        if (sortFields==null || sortFields.equals("")) {
-            String sf = (getIndexProps(indexName)).getProperty("fgsindex.defaultSortFields");
-            if (sf==null) {
-            	return "";
-            }
-            return sf;
-        }
-        else 
-            return sortFields;
-    }
-    
-    public String getBrowseIndexResultXslt(String indexName, String resultPageXslt) {
-        if (resultPageXslt==null || resultPageXslt.equals("")) 
-            return (getIndexProps(indexName)).getProperty("fgsindex.defaultBrowseIndexResultXslt");
-        else 
-            return resultPageXslt;
-    }
-    
-    public String getIndexInfoResultXslt(String indexName, String resultPageXslt) {
-        if (resultPageXslt==null || resultPageXslt.equals("")) 
-            return (getIndexProps(indexName)).getProperty("fgsindex.defaultGetIndexInfoResultXslt");
-        else 
-            return resultPageXslt;
-    }
-    
-    public String getIndexBase(String indexName) {
-        return insertSystemProperties(getIndexProps(indexName).getProperty("fgsindex.indexBase"));
-    }
-   
-    public String getAnalyzer(String indexName) {
-        return getIndexProps(indexName).getProperty("fgsindex.analyzer");
-    }
-    
-    public String getFieldAnalyzers(String indexName) {
-        return getIndexProps(indexName).getProperty("fgsindex.fieldAnalyzers");
-    }
-    
-    
-    public String getStopwordsLocation(String indexName) {
-        return getIndexProps(indexName).getProperty("fgsindex.stopwordsLocation");
-    }
-    
-    public String getUntokenizedFields(String indexName) {
-        String untokenizedFields = getIndexProps(indexName).getProperty("fgsindex.untokenizedFields");
-        if (untokenizedFields == null)
-        	untokenizedFields = "";
-        return untokenizedFields;
-    }
-    
-    public void setUntokenizedFields(String indexName, String untokenizedFields) {
-        getIndexProps(indexName).setProperty("fgsindex.untokenizedFields", untokenizedFields);
-    }
-    
-    public String getDefaultQueryFields(String indexName) {
-        return getIndexProps(indexName).getProperty("fgsindex.defaultQueryFields");
-    }
-    
-    public boolean getAllowLeadingWildcard(String indexName) {
-    	String allowLeadingWildcard = getIndexProps(indexName).getProperty("fgsindex.allowLeadingWildcard");
-        if (allowLeadingWildcard==null || allowLeadingWildcard.equals("")) {
-        	allowLeadingWildcard = "false";
-          }
-        return new Boolean( allowLeadingWildcard );
-    }
-    
-    public boolean getLowercaseExpandedTerms(String indexName) {
-    	String lowercaseExpandedTerms = getIndexProps(indexName).getProperty("fgsindex.lowercaseExpandedTerms");
-        if (lowercaseExpandedTerms==null || lowercaseExpandedTerms.equals("")) {
-        	lowercaseExpandedTerms = "true";
-          }
-        return new Boolean( lowercaseExpandedTerms );
-    }
-    
-    public String getSnippetBegin(String indexName) {
-    	String snippetBegin = getIndexProps(indexName).getProperty("fgsindex.snippetBegin");
-    	if (snippetBegin == null) return defaultSnippetBegin;
-    	return snippetBegin;
-    }
-    
-    public String getSnippetEnd(String indexName) {
-    	String snippetEnd = getIndexProps(indexName).getProperty("fgsindex.snippetEnd");
-    	if (snippetEnd == null) return defaultSnippetEnd;
-    	return snippetEnd;
-    }
-    
-    public int getMergeFactor(String indexName) {
-    	int mergeFactor = 1;
-		try {
-			mergeFactor = Integer.parseInt(getIndexProps(indexName).getProperty("fgsindex.mergeFactor"));
-		} catch (NumberFormatException e) {
-		}
-    	return mergeFactor;
-    }
-    
-    public int getMaxBufferedDocs(String indexName) {
-    	int maxBufferedDocs = 1;
-		try {
-			maxBufferedDocs = Integer.parseInt(getIndexProps(indexName).getProperty("fgsindex.maxBufferedDocs"));
-		} catch (NumberFormatException e) {
-		}
-    	return maxBufferedDocs;
-    }
-    
-    public long getDefaultWriteLockTimeout(String indexName) {
-    	long defaultWriteLockTimeout = 1;
-		try {
-			defaultWriteLockTimeout = Integer.parseInt(getIndexProps(indexName).getProperty("fgsindex.defaultWriteLockTimeout"));
-		} catch (NumberFormatException e) {
-		}
-    	return defaultWriteLockTimeout;
-    }
-    
-    public String getSearchResultFilteringType() {
-        return getProperty(fgsProps, "fedoragsearch.searchResultFilteringType");
-    }
-    
-    public boolean isSearchResultFilteringActive(String type) {
-        if (type.equals(getProperty(fgsProps, "fedoragsearch.searchResultFilteringType")))
-        	return true;
-    	else
-    		return false;
-    }
-    
-    public String getXsltProcessor() {
-        return getProperty(fgsProps, "fedoragsearch.xsltProcessor");
-    }
- 
     
     private String insertSystemProperties(String propertyValue) {
     	String result = propertyValue;
@@ -920,14 +399,11 @@ public class Config {
                 propName = propertyName.substring(i+1);
                 if (logger.isDebugEnabled())
                     logger.debug("propsName=" + propsName + " propName=" + propName);
-            	if (indexNameToProps.containsKey(propsName)) {
-            		props = indexNameToProps.get(propsName);
-            	}
             	else if (repositoryNameToProps.containsKey(propsName)) {
             		props = repositoryNameToProps.get(propsName);
             	}
             } else {
-            	props = fgsProps;
+            	props = pfsProps;
             }
     		propertyValue = getProperty(props, propName);
         }
@@ -948,14 +424,11 @@ public class Config {
                 propName = propertyName.substring(i+1);
                 if (logger.isDebugEnabled())
                     logger.debug("propsName=" + propsName + " propName=" + propName);
-            	if (indexNameToProps.containsKey(propsName)) {
-            		props = indexNameToProps.get(propsName);
-            	}
             	else if (repositoryNameToProps.containsKey(propsName)) {
             		props = repositoryNameToProps.get(propsName);
             	}
             } else {
-            	props = fgsProps;
+            	props = pfsProps;
             }
         	if (props!=null && propName!=null && propName.length()>0) {
         		props.setProperty(propName, propertyValue);
@@ -966,7 +439,7 @@ public class Config {
         return this;
     }
         
-    private Properties getFgsConfigProps(String propFilePath) throws ConfigException {
+    private Properties getPfsConfigProps(String propFilePath) throws ConfigException {
     	Properties props = null;
         try {
             InputStream propStream = Config.class.getResourceAsStream(propFilePath);
@@ -975,77 +448,55 @@ public class Config {
             	props.load(propStream);
             	propStream.close();
                 if (logger.isInfoEnabled())
-                    logger.info("getFgsConfigProps "+propFilePath+"=" + props.toString());
+                    logger.info("getPfsConfigProps "+propFilePath+"=" + props.toString());
             } else {
                 if (logger.isInfoEnabled())
-                    logger.info("getFgsConfigProps "+propFilePath+" not found in classpath");
+                    logger.info("getPfsConfigProps "+propFilePath+" not found in classpath");
                 throw new ConfigException(
-                        "*** getFgsConfigProps "+propFilePath+" not found in classpath");
+                        "*** getPfsConfigProps "+propFilePath+" not found in classpath");
             }
         } catch (Exception e) {
             if (logger.isInfoEnabled())
-                logger.info("getFgsConfigProps "+propFilePath+":\n" + e.toString());
+                logger.info("getPfsConfigProps "+propFilePath+":\n" + e.toString());
             throw new ConfigException(
-                    "*** getFgsConfigProps "+propFilePath+":\n" + e.toString());
+                    "*** getPfsConfigProps "+propFilePath+":\n" + e.toString());
         }
         return props;
     }
+ 
     
-    private boolean objectExists(String pid) throws ConfigException {
+    private FedoraClient getFedoraClient() throws ConfigException {
         if (logger.isDebugEnabled())
-            logger.debug("objectExists? pid="+pid);
-		boolean exists = true;
-		FedoraAPIA apia;
-		try {
-			apia = getAPIA();
-		} catch (Exception e) {
-            throw new ConfigException(
-                    "*** objectExists :\n" + e.toString());
-		}
-		try {
-			apia.getObjectProfile(pid, null);
-		} catch (Exception e) {
-            exists = false;
-	        if (logger.isDebugEnabled())
-	            logger.debug("getObjectProfile :\n" + e.toString());
-		}
-        if (logger.isDebugEnabled())
-            logger.debug("objectExists "+exists+" pid="+pid);
-        return exists;
-    }
-    
-    private FedoraClient getFgsConfigObjectsClient() throws ConfigException {
-        if (logger.isDebugEnabled())
-            logger.debug("getFgsConfigObjectsClient");
-        if (fgsconfigObjectsClient != null) {
-        	return fgsconfigObjectsClient;
+            logger.debug("getFedoraClient");
+        if (fedoraClient != null) {
+        	return fedoraClient;
         }
         if (logger.isDebugEnabled())
-            logger.debug("getFgsConfigObjectsClient new");
+            logger.debug("getFedoraClient new");
 		try {
-			fgsconfigObjectsClient = new FedoraClient(
-					getProperty(fcoProps, "fgsconfigObjects.fedoraSoap"),
-					getProperty(fcoProps, "fgsconfigObjects.fedoraUser"),
-					getProperty(fcoProps, "fgsconfigObjects.fedoraPass")
+			fedoraClient = new FedoraClient(
+					getProperty(fcoProps, "pfsconfigObjects.fedoraSoap"),
+					getProperty(fcoProps, "pfsconfigObjects.fedoraUser"),
+					getProperty(fcoProps, "pfsconfigObjects.fedoraPass")
 					);
 		} catch (Exception e) {
-            throw new ConfigException("getFgsConfigObjectsClient exception="+e.toString());
+            throw new ConfigException("getFedoraClient exception="+e.toString());
 		}
         if (logger.isDebugEnabled())
-            logger.debug("getFgsConfigObjectsClient new="+getProperty(fcoProps, "fgsconfigObjects.fedoraSoap"));
-    	String trustStorePath = getProperty(fcoProps, "fgsconfigObjects.trustStorePath");
-    	String trustStorePass = getProperty(fcoProps, "fgsconfigObjects.trustStorePass");
+            logger.debug("getFedoraClient new="+getProperty(fcoProps, "pfsconfigObjects.fedoraSoap"));
+    	String trustStorePath = getProperty(fcoProps, "pfsconfigObjects.trustStorePath");
+    	String trustStorePass = getProperty(fcoProps, "pfsconfigObjects.trustStorePass");
     	if (trustStorePath!=null && trustStorePath.length()>0)
     		System.setProperty("javax.net.ssl.trustStore", trustStorePath);
     	if (trustStorePass!=null && trustStorePass.length()>0)
     		System.setProperty("javax.net.ssl.trustStorePassword", trustStorePass);
-        return fgsconfigObjectsClient;
+        return fedoraClient;
     }
     
     private FedoraAPIA getAPIA() throws ConfigException {
-    	FedoraClient fedoraClient = getFgsConfigObjectsClient();
+    	FedoraClient fedoraClient = getFedoraClient();
         if (logger.isDebugEnabled())
-            logger.debug("getAPIA getFgsConfigObjectsClient ="+fedoraClient);
+            logger.debug("getAPIA getFedoraClient ="+fedoraClient);
         FedoraAPIA apia = null;
 		try {
 			apia = fedoraClient.getAPIA();
@@ -1058,192 +509,13 @@ public class Config {
     private FedoraAPIM getAPIM() throws ConfigException {
         FedoraAPIM apim = null;
 		try {
-			apim = getFgsConfigObjectsClient().getAPIM();
+			apim = getFedoraClient().getAPIM();
 		} catch (Exception e) {
             throw new ConfigException("getAPIM exception="+e.toString());
 		}
         return apim;
     }
-    
-    private void createObject(String pid, String label) throws ConfigException {
-		StringBuffer objectXML = new StringBuffer();
-		objectXML.append("<foxml:digitalObject PID=\""+pid+"\" VERSION=\"1.1\"");
-		objectXML.append("\nxmlns:foxml=\"info:fedora/fedora-system:def/foxml#\"");
-		objectXML.append("\nxmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
-		objectXML.append("\nxsi:schemaLocation=\"info:fedora/fedora-system:def/foxml# http://www.fedora.info/definitions/1/0/foxml1-1.xsd\"");
-		objectXML.append("\n>");
-		objectXML.append("\n<foxml:objectProperties>");
-		objectXML.append("\n<foxml:property NAME=\"info:fedora/fedora-system:def/model#state\" VALUE=\"Active\"/>");
-		objectXML.append("\n<foxml:property NAME=\"info:fedora/fedora-system:def/model#label\" VALUE=\""+label+"\"/>");
-		objectXML.append("\n<foxml:property NAME=\"info:fedora/fedora-system:def/model#ownerId\" VALUE=\"fgsAdmin\"/>");
-		objectXML.append("\n</foxml:objectProperties>");
-		objectXML.append("\n</foxml:digitalObject>");
-	    try {
-	    	getAPIM().ingest(objectXML.toString().getBytes(), "info:fedora/fedora-system:FOXML-1.1", label);
-		} catch (Exception e) {
-	        throw new ConfigException("ingest exception="+e.toString());
-		}
-	    if (logger.isDebugEnabled())
-	        logger.debug("ok createObject pid="+pid);
-    }
         
-    private void setFgsConfigObjects() throws ConfigException {
-    	fcoProps = getFgsConfigProps("/"+finalConfigName+"/fgsconfigObjects.properties");
-    	String finalConfigPath = getProperty(fcoProps, "fgsconfigObjects.finalConfigPath");
-    	File finalConfigRoot = new File(finalConfigPath);
-    	if (!finalConfigRoot.isDirectory()) {
-            throw new ConfigException("setFgsConfigObjects finalConfigPath='"+finalConfigPath+"' is not a directory.");
-    	}
-        File[] rootFiles = finalConfigRoot.listFiles();
-        if (rootFiles == null) {
-            throw new ConfigException("setFgsConfigObjects finalConfigPath='"+finalConfigPath+"' has no files.");
-    	}
-    	if (!objectExists(configRootObjectPid)) {
-        	createObject(configRootObjectPid, "FgsConfig root object");
-    	}
-    	setConfigFilesAsDatastreams(rootFiles);
-    }
-    
-    private void setConfigFilesAsDatastreams(File[] files) throws ConfigException {
-        for (File file : files) {
-        	if (file.isFile()) {
-        		if (!file.getName().startsWith(".")) {
-                    setConfigFileAsDatastream(file);
-        		}
-        	} else if (file.isDirectory()) {
-        		setConfigFilesAsDatastreams(file.listFiles());
-        	}
-        }
-    }
-    
-    private void setConfigFileAsDatastream(File file) throws ConfigException {
-        String baseUrl = getProperty(fcoProps, "fgsconfigObjects.fedoraSoap");
-	    int i = baseUrl.indexOf("://");
-	    String protocol = baseUrl.substring(0, i);
-	    int port = 80;
-	    int j = baseUrl.indexOf(":",i+3);
-	    if (j<0) {
-	    	j = baseUrl.indexOf("/",i+3);
-	    } else {
-	    	port = Integer.parseInt(baseUrl.substring(j+1, baseUrl.indexOf("/", j+1)));
-	    }
-	    String host = baseUrl.substring(i+3, j);
-	    String context = baseUrl.substring(baseUrl.indexOf("/", j));
-		String user = getProperty(fcoProps, "fgsconfigObjects.fedoraUser");
-		String pwd = getProperty(fcoProps, "fgsconfigObjects.fedoraPass");
-		String dsid;
-		try {
-			dsid = file.getCanonicalPath();
-			int k = dsid.indexOf("/"+finalConfigName);
-			dsid = dsid.substring(k+1).replaceAll("/", "_");
-		} catch (IOException e) {
-            throw new ConfigException("setConfigFileAsDatastream file.getCanonicalPath() exception="+e.toString());
-		}
-		InputStream fileContent;
-		try {
-			fileContent = new FileInputStream(file);
-		} catch (FileNotFoundException e) {
-            throw new ConfigException("setConfigFileAsDatastream upload exception="+e.toString());
-		}
-	    if (logger.isDebugEnabled())
-	        logger.debug("setConfigFileAsDatastream pid="+configRootObjectPid+" dsid="+dsid+" protocol="+protocol+" host="+host+" port="+port+" user="+user+" pwd="+pwd);
-        String dsLocation = "";
-		try {
-			Uploader uploader = new Uploader(protocol, host, port, context, user, pwd);
-			dsLocation = uploader.upload(fileContent);
-		} catch (Exception e) {
-            throw new ConfigException("setConfigFileAsDatastream upload exception="+e.toString());
-		}
-		MimetypesFileTypeMap mimeTypesMap = new MimetypesFileTypeMap();
-		String mimeType = mimeTypesMap.getContentType(file);
-		String fileExtension = file.getName().substring(file.getName().lastIndexOf(".")+1);
-		if (fileExtension.equals("txt")) mimeType = "text/plain";
-		if (fileExtension.equals("properties")) mimeType = "text/plain";
-		if (fileExtension.equals("xml")) mimeType = "text/xml";
-		if (fileExtension.equals("xslt")) mimeType = "text/xml";
-		if (fileExtension.equals("wsdd")) mimeType = "text/xml";
-	    if (logger.isDebugEnabled())
-	        logger.debug("setConfigFileAsDatastream pid="+configRootObjectPid+" dsid="+dsid+" mimeType="+mimeType+" dsLocation="+dsLocation);
-        try {
-	        getAPIM().modifyDatastreamByReference(configRootObjectPid, dsid, null, "contents of configuration file", mimeType, null, dsLocation, "DISABLED", null, "add datastream", false);
-		} catch (Exception e) {
-	        try {
-		        getAPIM().addDatastream(configRootObjectPid, dsid, null, "contents of configuration file", true, mimeType, null, dsLocation, "M", "A", "DISABLED", null, "add datastream");
-			} catch (Exception e1) {
-		        throw new ConfigException("modifyDatastream exception=\n"+e.toString()+"\naddDatastream exception=\n"+e1.toString());
-			}
-		}
-	    if (logger.isDebugEnabled())
-	        logger.debug("ok setConfigFileAsDatastream pid="+configRootObjectPid+" dsid="+dsid);
-    }
-        
-    private void getFgsConfigObjects() throws ConfigException {
-//    	writes all the configuration datastreams to the configuration files
-    	fcoProps = getFgsConfigProps("/"+finalConfigName+"/fgsconfigObjects.properties");
-    	if (!objectExists(configRootObjectPid)) {
-            throw new ConfigException("getFgsConfigObjects: the object '"+configRootObjectPid+"' does not exist.");
-    	}
-    	String finalConfigPath = getProperty(fcoProps, "fgsconfigObjects.finalConfigPath");
-    	File finalConfigRoot = new File(finalConfigPath);
-    	if (!finalConfigRoot.isDirectory()) {
-            throw new ConfigException("setFgsConfigObjects finalConfigPath='"+finalConfigPath+"' is not a directory.");
-    	}
-		List<DatastreamDef> dsds = null;
-        try {
-	        dsds = getAPIA().listDatastreams(configRootObjectPid, null);
-		} catch (Exception e) {
-            throw new ConfigException("getFgsConfigObjects listDatastreams exception="+e.toString());
-		}
-        for (DatastreamDef dsdef : dsds){
-			String dsid = dsdef.getID();
-	        if (logger.isDebugEnabled())
-	            logger.debug("getFgsConfigObjects dsid="+dsid);
-	        int j = dsid.indexOf("_");
-	        if (j>-1 && finalConfigName.equals(dsid.substring(0,j))) {
-				File configFile = new File(finalConfigRoot, dsid.substring(j).replaceAll("_", "/"));
-		        StringBuffer fileContent = new StringBuffer();
-		        MIMETypedStream mts = null;
-				try {
-					mts = getAPIA().getDatastreamDissemination(configRootObjectPid, dsid, null);
-				} catch (Exception e) {
-		            throw new ConfigException("getFgsConfigObjects getDatastreamDissemination exception="+e.toString());
-				}
-		        byte[] ds = null;
-		        if (mts!=null) {
-		            ds = mts.getStream();
-		            InputStreamReader isr = new InputStreamReader(new ByteArrayInputStream(ds));
-		            try {
-		                int c = isr.read();
-		                while (c>-1) {
-		                	fileContent.append((char)c);
-		                    c=isr.read();
-		                }
-		            } catch (Exception e) {
-		                throw new ConfigException("getFgsConfigObjects datastream read exception="+e.toString());
-		            }
-		        }
-		        BufferedWriter bufferedWriter = null;
-	            try {
-					bufferedWriter = new BufferedWriter(new FileWriter(configFile));
-				} catch (IOException e) {
-		            throw new ConfigException("getFgsConfigObjects bufferedWriter exception="+e.toString());
-				}
-		        try {
-		            bufferedWriter.write(fileContent.toString());
-		        } catch (Exception e) {
-		            throw new ConfigException("getFgsConfigObjects datastream write exception="+e.toString());
-		        } finally {
-		            try {
-	                    bufferedWriter.flush();
-	                    bufferedWriter.close();
-		            } catch (IOException e) {
-			            throw new ConfigException("getFgsConfigObjects datastream close exception="+e.toString());
-		            }
-		        }
-		        if (logger.isDebugEnabled())
-		            logger.debug("getFgsConfigObjects ok dsid="+dsid);
-	        }
-		}
-    }
+   
     
 }

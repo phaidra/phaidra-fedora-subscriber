@@ -1,0 +1,11 @@
+killnut beziaci tomcat a zapnut klasicky
+
+service:jmx:rmi:///jndi/rmi://127.0.0.1:1099/jmxrmi
+
+
+mysql -h localhost -u fedora -pPehANiCE fedora3
+
+http://localhost:8080/fedora/admin/
+user: fedoraAdmin
+pass: fedora
+

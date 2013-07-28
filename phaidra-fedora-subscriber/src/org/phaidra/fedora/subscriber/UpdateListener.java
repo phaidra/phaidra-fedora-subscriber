@@ -81,7 +81,7 @@ public class UpdateListener extends HttpServlet implements MessagingListener {
             String clientId = properties.getProperty("client.id");
             if(clientId == null) {
                 ++updaterIndex;
-                clientId = "fedoragsearch" + updaterIndex;
+                clientId = "pfs" + updaterIndex;
             }
             
             try {
